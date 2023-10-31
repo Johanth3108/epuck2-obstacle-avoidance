@@ -1,0 +1,6 @@
+11:44:29 **** Incremental Build of configuration Default for project epuck1l ****
+make all 
+make: Nothing to be done for 'all'.
+
+11:44:29 Build Finished. 0 errors, 0 warnings. (took 690ms)
+

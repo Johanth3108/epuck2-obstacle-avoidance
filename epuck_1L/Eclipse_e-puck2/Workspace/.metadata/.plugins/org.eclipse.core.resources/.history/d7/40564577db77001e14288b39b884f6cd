@@ -1,0 +1,119 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+
+#include "ch.h"
+#include "hal.h"
+#include "memory_protection.h"
+#include <main.h>
+
+//Proximity sensor header file
+#include "sensors/proximity.h"
+
+//Motors header files
+#include "motors.h"
+
+//Inter process commumnication bus
+messagebus_t bus;
+MUTEX_DECL(bus_lock);
+CONDVAR_DECL(bus_condvar);
+
+
+//MACROS
+#define MAX_ACC 400
+#define IR_SENSORS 8
+#define THRESH 170
+#define ANG_SPEED_DEG 283.588111888
+
+bool * get_sensors_condition(void)
+{
+	static bool sensors_state[IR_SENSORS] = {false};
+	for(int i = 0; i < IR_SENSORS; i++){
+		if(get_prox(i)>THRESH){
+			sensors_state[i] = true;
+		}
+		else{
+			sensors_state[i] = false;
+		}
+	}
+	return sensors_state;
+}
+
+void stop(void){
+	left_motor_set_speed(0);
+	right_motor_set_speed(0);
+}
+
+void right(void){
+	left_motor_set_speed(MAX_ACC);
+	right_motor_set_speed(-MAX_ACC);
+}
+
+void left(void){
+	left_motor_set_speed(-MAX_ACC);
+	right_motor_set_speed(MAX_ACC);
+}
+
+void forward(void){
+	left_motor_set_speed(MAX_ACC);
+	right_motor_set_speed(MAX_ACC);
+}
+
+static float calc_rot_time(float deg){
+	return (deg)/ANG_SPEED_DEG;
+}
+
+void rot_inbetween(float degrees){
+	left();
+
+	float duration = calc_rot_time(degrees);
+	chThdSleepMilliseconds(duration);
+	stop();
+}
+
+int main(void)
+{
+//	initiate the inter process communication bus
+	messagebus_init(&bus, &bus_lock, &bus_condvar);
+
+    halInit();
+    chSysInit();
+    mpu_init();
+
+//    initialise motors
+    motors_init();
+//    initialise IR sensors
+    for(int i = 0; i < IR_SENSORS; i++){
+    	proximity_start(i);
+    }
+    calibrate_ir();
+    /* Infinite loop. */
+    while (1) {
+    	bool *active_sensors = get_sensors_condition();
+    	if(active_sensors[1] && active_sensors[6]){
+    		left();
+//			float duration = abs(180/283.588)*1000;
+			chThdSleepMilliseconds(634);
+//			stop();
+    	} else if (active_sensors[0] || active_sensors[1]){
+    		left();
+    	} else if (active_sensors[7] || active_sensors[6]){
+    		right();
+    	} else {
+    		forward();
+    	}
+    	//waits 1 second
+//    	int sen0 = get_prox(0);
+//    	printf("%d",sen0);
+//        chThdSleepMilliseconds(1000);
+    }
+}
+
+#define STACK_CHK_GUARD 0xe2dee396
+uintptr_t __stack_chk_guard = STACK_CHK_GUARD;
+
+void __stack_chk_fail(void)
+{
+    chSysHalt("Stack smashing detected");
+}

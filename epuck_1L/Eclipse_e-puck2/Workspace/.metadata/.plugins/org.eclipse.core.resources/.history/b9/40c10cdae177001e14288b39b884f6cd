@@ -1,0 +1,151 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+
+#include "ch.h"
+#include "hal.h"
+#include "memory_protection.h"
+#include <main.h>
+
+//Proximity sensor header file
+#include "sensors/proximity.h"
+
+//Motors header files
+#include "motors.h"
+
+#include "leds.h"
+#include "spi_comm.h"
+
+//Inter process commumnication bus
+messagebus_t bus;
+MUTEX_DECL(bus_lock);
+CONDVAR_DECL(bus_condvar);
+
+
+//MACROS
+#define MAX_ACC 400
+#define IR_SENSORS 8
+#define THRESH 280
+#define ANG_SPEED_DEG 283.588111888
+
+bool * get_sensors_condition(void)
+{
+	static bool sensors_state[IR_SENSORS] = {false};
+	for(int i = 0; i < IR_SENSORS; i++){
+		if(get_prox(i)>THRESH){
+			sensors_state[i] = true;
+		}
+		else{
+			sensors_state[i] = false;
+		}
+	}
+	return sensors_state;
+}
+
+void stop(void){
+	left_motor_set_speed(0);
+	right_motor_set_speed(0);
+}
+
+void right(void){
+	left_motor_set_speed(MAX_ACC);
+	right_motor_set_speed(-MAX_ACC);
+}
+
+void left(void){
+	left_motor_set_speed(-MAX_ACC);
+	right_motor_set_speed(MAX_ACC);
+}
+
+void forward(void){
+	left_motor_set_speed(MAX_ACC);
+	right_motor_set_speed(MAX_ACC);
+}
+
+static float calc_rot_time(float deg){
+	return (deg)/ANG_SPEED_DEG;
+}
+
+void rot_inbetween(float degrees){
+	left();
+
+	float duration = calc_rot_time(degrees);
+	chThdSleepMilliseconds(duration);
+	stop();
+}
+
+int main(void)
+{
+//	initiate the inter process communication bus
+	messagebus_init(&bus, &bus_lock, &bus_condvar);
+
+    halInit();
+    chSysInit();
+    mpu_init();
+
+//    initialise motors
+    motors_init();
+//    initialise IR sensors
+    for(int i = 0; i < IR_SENSORS; i++){
+    	proximity_start(i);
+    }
+    calibrate_ir();
+
+    clear_leds();
+    spi_comm_start();
+    /* Infinite loop. */
+    while (1) {
+
+    	set_rgb_led(LED4, 10,0,0);
+    	set_rgb_led(LED6, 10,0,0);
+    	set_led(LED5, 1);
+
+
+    	bool *active_sensors = get_sensors_condition();
+    	if(active_sensors[1] && active_sensors[6]){
+    		set_body_led(0);
+    		set_rgb_led(LED2, 10,0,0);
+    		left();
+//			float duration = abs(180/283)*1000;
+			chThdSleepMilliseconds(634);
+			set_rgb_led(LED2, 0,10,0);
+			stop();
+    	} else if (active_sensors[6] && active_sensors[1] && active_sensors[2] && active_sensors[5]){
+    		set_body_led(0);
+			set_rgb_led(LED2, 10,0,0);
+			right();
+//			float duration = abs(180/283)*1000;
+			chThdSleepMilliseconds(834);
+			set_rgb_led(LED2, 0,10,0);
+			forward();
+			chThdSleepMilliseconds(100);
+			stop();
+    	}else if (active_sensors[0] || active_sensors[1]){
+    		set_body_led(0);
+    		set_rgb_led(LED2, 10,0,0);
+    		left();
+    		set_rgb_led(LED2, 0,10,0);
+    	} else if (active_sensors[7] || active_sensors[6]){
+    		set_body_led(0);
+    		set_rgb_led(LED8, 10,0,0);
+    		right();
+    		set_rgb_led(LED8, 0,10,0);
+    	} else {
+    		set_body_led(1);
+    		forward();
+    	}
+    	//waits 1 second
+//    	int sen0 = get_prox(0);
+//    	printf("%d",sen0);
+        chThdSleepMilliseconds(200);
+    }
+}
+
+#define STACK_CHK_GUARD 0xe2dee396
+uintptr_t __stack_chk_guard = STACK_CHK_GUARD;
+
+void __stack_chk_fail(void)
+{
+    chSysHalt("Stack smashing detected");
+}
