@@ -51,4 +51,4 @@ You can customize the behavior of the robot by adjusting parameters such as:
 
 ## Contributors
 - Johanth PS (https://github.com/Johanth3108)
-- Yuchi Wang ([https://github.com/prolouisw])
+- Yuchi Wang (https://github.com/prolouisw)
